@@ -2334,6 +2334,11 @@ static inline bool can_bypass(obs_source_t *target, obs_source_t *parent,
 		((parent_flags & OBS_SOURCE_ASYNC) == 0);
 }
 
+gs_texture_t *obs_source_get_filter_texture(obs_source_t *filter)
+{
+	return gs_texrender_get_texture(filter->filter_texrender);
+}
+
 void obs_source_process_filter_begin(obs_source_t *filter,
 		enum gs_color_format format,
 		enum obs_allow_direct_render allow_direct)

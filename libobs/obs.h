@@ -943,6 +943,8 @@ EXPORT void obs_source_process_filter_begin(obs_source_t *filter,
 		enum gs_color_format format,
 		enum obs_allow_direct_render allow_direct);
 
+EXPORT gs_texture_t *obs_source_get_filter_texture(obs_source_t *filter);
+
 /**
  * Draws the filter.
  *
