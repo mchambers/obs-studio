@@ -1,5 +1,6 @@
 <RCC>
   <qresource prefix="/res">
+    <file>images/multi-file.png</file>
     <file>images/mute.png</file>
     <file>images/unmute.png</file>
     <file>images/configuration21_16.png</file>

@@ -35,6 +35,10 @@
     qproperty-icon: url(:/res/images/down.png);
 }
 
+* [themeID="multiFileIconSmall"] {
+    qproperty-icon: url(:/res/images/multi-file.png);
+}
+
 MuteCheckBox {
     outline: none;
 }

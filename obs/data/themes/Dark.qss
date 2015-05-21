@@ -188,6 +188,10 @@ QToolButton:pressed {
     qproperty-icon: url(./Dark/down_arrow.png);
 }
 
+* [themeID="multiFileIconSmall"] {
+    qproperty-icon: url(./Dark/multi-file.png);
+}
+
 
 /* Tab Widget */
 
