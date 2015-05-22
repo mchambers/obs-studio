@@ -20,22 +20,23 @@ struct VertData {
 	float2 uv  : TEXCOORD0;
 };
 
-float2 select(float2 texel, int x, int y)
+
+ivec2 select(ivec2 texel, int x, int y)
 {
-	return float2(texel + (float2(x, y) / dimensions));
+	return texel + ivec2(x, y);
 }
 
-float4 load_at_prev(float2 texel, int x, int y)
+float4 load_at_prev(ivec2 texel, int x, int y)
 {
-	return previous_image.Sample(textureSampler, select(texel, x, y));
+	return texelFetch(previous_image, select(texel, x, y), 0);
 }
 
-float4 load_at_image(float2 texel, int x, int y)
+float4 load_at_image(ivec2 texel, int x, int y)
 {
-	return image.Sample(textureSampler, select(texel, x, y));
+	return texelFetch(image, select(texel, x, y), 0);
 }
 
-float4 load_at(float2 texel, int x, int y, int field)
+float4 load_at(ivec2 texel, int x, int y, int field)
 {
 	if(field == 0)
 		return load_at_image(texel, x, y);
@@ -68,10 +69,10 @@ float4 load_at(float2 texel, int x, int y, int field)
 	YADIF_UPDATE(a, level) YADIF_CHECK_ONE(level * 2, a) } \
 }
 
-float4 texel_at_yadif(float2 texel, int field)
+float4 texel_at_yadif(ivec2 texel, int field)
 {
 
-	if((int(texel.y * dimensions.y) % 2) == field)
+	if((texel.y % 2) == field)
 		return load_at(texel, 0, 0, field);
 
 	#define YADIF_AVG(x_off, y_off) ((load_at_prev(texel, x_off, y_off) + load_at_image(texel, x_off, y_off))/2)
@@ -94,18 +95,18 @@ float4 texel_at_yadif(float2 texel, int field)
 	YADIF_CHECK(-1)
 	YADIF_CHECK(1)
 
-	float4 max_ = max(d - e, max(d - c, min(b - c, f - e))),
-	       min_ = min(d - e, min(d - c, max(b - c, f - e)));
+	float4 max_ = max(d - e, d - c),//, min(b - c, f - e))),
+	       min_ = min(d - e, d - c);//, max(b - c, f - e)));
 
 	diff = max(diff, max(min_, -max_));
 
- #define YADIF_SPATIAL(c) \
- { \
- 	if(spatial_pred.c > d.c + diff.c) \
- 		spatial_pred.c = d.c + diff.c; \
- 	else if(spatial_pred.c < d.c - diff.c) \
- 		spatial_pred.c = d.c - diff.c; \
- }
+#define YADIF_SPATIAL(c) \
+{ \
+	if(spatial_pred.c > d.c + diff.c) \
+		spatial_pred.c = d.c + diff.c; \
+	else if(spatial_pred.c < d.c - diff.c) \
+		spatial_pred.c = d.c - diff.c; \
+}
 
 	YADIF_SPATIAL(r)
 	YADIF_SPATIAL(g)
@@ -115,7 +116,7 @@ float4 texel_at_yadif(float2 texel, int field)
 	return spatial_pred;
 }
 
-float4 texel_at_diff(float2 texel, int field)
+float4 texel_at_diff(ivec2 texel, int field)
 {
 	float4 current = load_at_image(texel, 0, 0);
 	float4 prev = load_at_prev(texel, 0, 0);
@@ -126,32 +127,35 @@ float4 texel_at_diff(float2 texel, int field)
 	return current;
 }
 
-float4 texel_at_linear(float2 texel, int field)
+float4 texel_at_discard(ivec2 texel, int field)
 {
-	if ((int(texel.y * dimensions.y) % 2) == field)
-		return load_at_image(texel, 0, 0);
-	return (load_at_image(texel, 0, -1) + load_at_image(texel, 0, 1)) / 2;
+		return load_at_image(texel, 0, (texel.y + field) % 2);
 }
 
-float4 texel_at_blend_up(float2 texel, int field)
-{
-	return (load_at_image(texel, 0, 0) + load_at_image(texel, 0, 1)) / 2;
-}
-
-float4 texel_at_blend_around(float2 texel, int field)
+float4 texel_at_blend_around(ivec2 texel, int field)
 {
 	return (load_at_image(texel, 0, 0) * 2 + 
             load_at_image(texel, 0, -1) +
             load_at_image(texel, 0, 1)) / 4;
 }
 
+float4 texel_at_linear(ivec2 texel, int field)
+{
+	if ((texel.y % 2) == field)
+		return load_at_image(texel, 0, 0);
+	return (load_at_image(texel, 0, -1) + load_at_image(texel, 0, 1)) / 2;
+}
+
 float4 sample_pixel(float2 coord)
 {	
-	return texel_at_yadif(coord, field_order);
+	return texel_at_yadif(ivec2(coord * dimensions), field_order);
 }
 
 float4 PSDeinterlaceRGBA(VertData v_in) : TARGET
 {
+	// hack
+	previous_image.Sample(textureSampler, float2(0, 0));
+	image.Sample(textureSampler, float2(0, 0));
 	return sample_pixel(v_in.uv);
 }
 
