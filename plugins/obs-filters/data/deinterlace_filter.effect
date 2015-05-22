@@ -20,6 +20,24 @@ struct VertData {
 	float2 uv  : TEXCOORD0;
 };
 
+// Defining yadif + bob makes for better thickness but blurs letters
+// undefining is clearer for stationary stuff but deinterlaced look not so goodish
+//#define YADIF_DISCARD
+// Enable YADIF_SPATIAL_INTERLACE to see artifacts
+//#define YADIF_SPATIAL_INTERLACE
+
+//#define DX
+#define OPENGL
+
+#ifdef DX
+#define ivec2 int2
+#define ivec3 int3
+#define LOAD(image, texel, x, y) image.Load(ivec3(select(texel, x, y), 0), 0)
+#endif
+
+#ifdef OPENGL
+#define LOAD(image, texel, x, y) texelFetch(image, select(texel, x, y), 0)
+#endif
 
 ivec2 select(ivec2 texel, int x, int y)
 {
@@ -28,12 +46,12 @@ ivec2 select(ivec2 texel, int x, int y)
 
 float4 load_at_prev(ivec2 texel, int x, int y)
 {
-	return texelFetch(previous_image, select(texel, x, y), 0);
+	return LOAD(previous_image, texel, x, y);
 }
 
 float4 load_at_image(ivec2 texel, int x, int y)
 {
-	return texelFetch(image, select(texel, x, y), 0);
+	return LOAD(image, texel, x, y);
 }
 
 float4 load_at(ivec2 texel, int x, int y, int field)
@@ -76,11 +94,9 @@ float4 texel_at_yadif(ivec2 texel, int field)
 		return load_at(texel, 0, 0, field);
 
 	#define YADIF_AVG(x_off, y_off) ((load_at_prev(texel, x_off, y_off) + load_at_image(texel, x_off, y_off))/2)
-	float4 b = YADIF_AVG(0, 2),
-	       c = load_at(texel, 0, 1, field),
+	float4 c = load_at(texel, 0, 1, field),
 	       d = YADIF_AVG(0, 0),
-	       e = load_at(texel, 0, -1, field),
-	       f = YADIF_AVG(0, -2);
+	       e = load_at(texel, 0, -1, field);
 
 	float4 temporal_diff0 = (abs(load_at_prev(texel,  0, 0)      -     load_at_image(texel, 0, 0)))      / 2,
 	       temporal_diff1 = (abs(load_at_prev(texel,  0, 1) - c) + abs(load_at_prev(texel,  0, -1) - e)) / 2,
@@ -95,10 +111,17 @@ float4 texel_at_yadif(ivec2 texel, int field)
 	YADIF_CHECK(-1)
 	YADIF_CHECK(1)
 
-	float4 max_ = max(d - e, d - c),//, min(b - c, f - e))),
-	       min_ = min(d - e, d - c);//, max(b - c, f - e)));
+	#ifdef YADIF_SPATIAL_INTERLACE
+	float4 b = YADIF_AVG(0, 2),
+	       f = YADIF_AVG(0, -2);
+
+	float4 max_ = max(d - e, max(d - c, min(b - c, f - e))),
+	       min_ = min(d - e, min(d - c, max(b - c, f - e)));
 
 	diff = max(diff, max(min_, -max_));
+	#else
+	diff = max(diff, max(min(d - e, d - c), -max(d - e, d - c)));
+	#endif
 
 #define YADIF_SPATIAL(c) \
 { \
@@ -116,6 +139,7 @@ float4 texel_at_yadif(ivec2 texel, int field)
 	return spatial_pred;
 }
 
+#ifdef OPENGL
 float4 texel_at_diff(ivec2 texel, int field)
 {
 	float4 current = load_at_image(texel, 0, 0);
@@ -126,6 +150,7 @@ float4 texel_at_diff(ivec2 texel, int field)
 	
 	return current;
 }
+#endif
 
 float4 texel_at_discard(ivec2 texel, int field)
 {
@@ -146,9 +171,19 @@ float4 texel_at_linear(ivec2 texel, int field)
 	return (load_at_image(texel, 0, -1) + load_at_image(texel, 0, 1)) / 2;
 }
 
+float4 texel_at_discard_yadif(ivec2 texel, int field)
+{
+	return (texel_at_yadif(texel, field) + texel_at_discard(texel, field)) / 2;
+}
+
 float4 sample_pixel(float2 coord)
 {	
-	return texel_at_yadif(ivec2(coord * dimensions), field_order);
+	#ifndef YADIF_DISCARD
+	return texel_at_yadif(
+	#else
+	return texel_at_discard_yadif(
+	#endif
+		ivec2(coord * dimensions), field_order);
 }
 
 float4 PSDeinterlaceRGBA(VertData v_in) : TARGET
