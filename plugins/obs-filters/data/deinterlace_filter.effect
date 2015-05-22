@@ -6,7 +6,6 @@ uniform float3 color_range_max = {1.0, 1.0, 1.0};
 
 uniform texture2d previous_image;
 uniform int field_order;
-uniform float2 pixel_size;
 uniform float2 dimensions;
 
 sampler_state textureSampler {
@@ -20,41 +19,25 @@ struct VertData {
 	float2 uv  : TEXCOORD0;
 };
 
-// Defining yadif + bob makes for better thickness but blurs letters
-// undefining is clearer for stationary stuff but deinterlaced look not so goodish
-//#define YADIF_DISCARD
-// Enable YADIF_SPATIAL_INTERLACE to see artifacts
-//#define YADIF_SPATIAL_INTERLACE
+// Mode 0
+#define YADIF_SPATIAL_INTERLACE
 
-//#define DX
-#define OPENGL
-
-#ifdef DX
-#define ivec2 int2
-#define ivec3 int3
-#define LOAD(image, texel, x, y) image.Load(ivec3(select(texel, x, y), 0), 0)
-#endif
-
-#ifdef OPENGL
-#define LOAD(image, texel, x, y) texelFetch(image, select(texel, x, y), 0)
-#endif
-
-ivec2 select(ivec2 texel, int x, int y)
+int3 select(int2 texel, int x, int y)
 {
-	return texel + ivec2(x, y);
+	return int3(texel + int2(x, y), 0);
 }
 
-float4 load_at_prev(ivec2 texel, int x, int y)
+float4 load_at_prev(int2 texel, int x, int y)
 {
-	return LOAD(previous_image, texel, x, y);
+	return previous_image.Load(textureSampler, select(texel, x, y));
 }
 
-float4 load_at_image(ivec2 texel, int x, int y)
+float4 load_at_image(int2 texel, int x, int y)
 {
-	return LOAD(image, texel, x, y);
+	return image.Load(textureSampler, select(texel, x, y));
 }
 
-float4 load_at(ivec2 texel, int x, int y, int field)
+float4 load_at(int2 texel, int x, int y, int field)
 {
 	if(field == 0)
 		return load_at_image(texel, x, y);
@@ -87,7 +70,7 @@ float4 load_at(ivec2 texel, int x, int y, int field)
 	YADIF_UPDATE(a, level) YADIF_CHECK_ONE(level * 2, a) } \
 }
 
-float4 texel_at_yadif(ivec2 texel, int field)
+float4 texel_at_yadif(int2 texel, int field)
 {
 
 	if((texel.y % 2) == field)
@@ -139,61 +122,61 @@ float4 texel_at_yadif(ivec2 texel, int field)
 	return spatial_pred;
 }
 
-#ifdef OPENGL
-float4 texel_at_diff(ivec2 texel, int field)
-{
-	float4 current = load_at_image(texel, 0, 0);
-	float4 prev = load_at_prev(texel, 0, 0);
-
-	if (current != prev)
-		current.r = 1;
-	
-	return current;
-}
-#endif
-
-float4 texel_at_discard(ivec2 texel, int field)
+float4 texel_at_discard(int2 texel, int field)
 {
 		return load_at_image(texel, 0, (texel.y + field) % 2);
 }
 
-float4 texel_at_blend_around(ivec2 texel, int field)
+float4 texel_at_blend_around(int2 texel, int field)
 {
 	return (load_at_image(texel, 0, 0) * 2 + 
             load_at_image(texel, 0, -1) +
             load_at_image(texel, 0, 1)) / 4;
 }
 
-float4 texel_at_linear(ivec2 texel, int field)
+float4 texel_at_linear(int2 texel, int field)
 {
 	if ((texel.y % 2) == field)
 		return load_at_image(texel, 0, 0);
 	return (load_at_image(texel, 0, -1) + load_at_image(texel, 0, 1)) / 2;
 }
 
-float4 texel_at_discard_yadif(ivec2 texel, int field)
+int2 pixel_uv(float2 uv)
+{
+	return int2(uv * dimensions);
+}
+
+float4 texel_at_yadif_discard(int2 texel, int field)
 {
 	return (texel_at_yadif(texel, field) + texel_at_discard(texel, field)) / 2;
 }
 
-float4 sample_pixel(float2 coord)
-{	
-	#ifndef YADIF_DISCARD
-	return texel_at_yadif(
-	#else
-	return texel_at_discard_yadif(
-	#endif
-		ivec2(coord * dimensions), field_order);
-}
-
-float4 PSDeinterlaceRGBA(VertData v_in) : TARGET
+float4 PSYadifRGBA(VertData v_in) : TARGET
 {
-	// hack
-	previous_image.Sample(textureSampler, float2(0, 0));
-	image.Sample(textureSampler, float2(0, 0));
-	return sample_pixel(v_in.uv);
+	return texel_at_yadif(pixel_uv(v_in.uv), field_order);
 }
 
+float4 PSYadifDiscardRGBA(VertData v_in) : TARGET
+{
+	return texel_at_yadif_discard(pixel_uv(v_in.uv), field_order);
+}
+
+float4 PSLinearRGBA(VertData v_in) : TARGET
+{
+	return texel_at_linear(pixel_uv(v_in.uv), field_order);
+}
+
+float4 PSDiscardRGBA(VertData v_in) : TARGET
+{
+	return texel_at_discard(pixel_uv(v_in.uv), field_order);
+}
+
+float4 PSBlendRGBA(VertData v_in) : TARGET
+{
+	return texel_at_blend_around(pixel_uv(v_in.uv), field_order);
+}
+
+// Mr. Do Nothing
 float4 PSDeinterlaceMatrix(VertData v_in) : TARGET
 {
 	float4 yuv = image.Sample(textureSampler, v_in.uv);
@@ -211,12 +194,48 @@ VertData VSDefault(VertData v_in)
 	return vert_out;
 }
 
-technique Draw
+technique DrawYadifDiscard
 {
 	pass
 	{
 		vertex_shader = VSDefault(v_in);
-		pixel_shader  = PSDeinterlaceRGBA(v_in);
+		pixel_shader  = PSYadifDiscardRGBA(v_in);
+	}
+}
+
+technique DrawYadif
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSYadifRGBA(v_in);
+	}
+}
+
+technique DrawLinear
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSLinearRGBA(v_in);
+	}
+}
+
+technique DrawDiscard
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSDiscardRGBA(v_in);
+	}
+}
+
+technique DrawBlend
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSBlendRGBA(v_in);
 	}
 }
 

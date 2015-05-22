@@ -10,7 +10,6 @@ struct deinterlace_filter_data {
 
 	gs_eparam_t                    *previous_image_param;
 	gs_eparam_t                    *field_order_param;
-	gs_eparam_t                    *pixel_size_param;
 	gs_eparam_t                    *dimensions_param;
 
 	const char                     *deinterlacer;
@@ -72,8 +71,6 @@ static void *deinterlace_create(obs_data_t *settings, obs_source_t *context)
 				filter->effect, "previous_image");
 		filter->field_order_param = gs_effect_get_param_by_name(
 				filter->effect, "field_order");
-		filter->pixel_size_param = gs_effect_get_param_by_name(
-				filter->effect, "pixel_size");
 		filter->dimensions_param = gs_effect_get_param_by_name(
 				filter->effect, "dimensions");
 	}
@@ -108,12 +105,10 @@ static void deinterlace_render(void *data, gs_effect_t *effect)
 	struct vec2 dimensions = { 0 };
 	vec2_set(&dimensions, width, height);
 
-	gs_effect_set_texture(filter->previous_image_param, filter->previous_image);
-	gs_effect_set_int(filter->field_order_param, filter->field_order ? 0 : 1);
-	gs_effect_set_vec2(filter->pixel_size_param, &pixel_size);
-	gs_effect_set_vec2(filter->dimensions_param, &dimensions);
-
 	gs_texture_t *texture = obs_source_get_filter_texture(filter->context);
+	gs_effect_set_texture(filter->previous_image_param,  texture);
+	gs_effect_set_int(filter->field_order_param, filter->field_order ? 0 : 1);
+	gs_effect_set_vec2(filter->dimensions_param, &dimensions);
 
 	gs_texture_t *current_texture = gs_texture_create(
 			gs_texture_get_width(texture),
@@ -123,7 +118,8 @@ static void deinterlace_render(void *data, gs_effect_t *effect)
 
 	gs_copy_texture(current_texture, texture);
 
-	obs_source_process_filter_end(filter->context, filter->effect, 0, 0);
+	obs_source_process_filter_tech_end(filter->context, filter->effect, 0, 0,
+			filter->deinterlacer, "DrawMatrix");
 
 	if (filter->previous_image)
 		gs_texture_destroy(filter->previous_image);
@@ -132,9 +128,31 @@ static void deinterlace_render(void *data, gs_effect_t *effect)
 	UNUSED_PARAMETER(effect);
 }
 
+#define DEINT_BLEND "Blend"
+#define DEINT_DISCARD "Discard"
+#define DEINT_LINEAR "Linear"
+#define DEINT_YADIF "Yadif"
+#define DEINT_YADIF_DISCARD "YadifDiscard"
+#define DEINTER(x) "Draw" x
+
 static obs_properties_t *deinterlace_properties(void *data)
 {
 	obs_properties_t *props = obs_properties_create();
+
+	obs_property_t *prop = obs_properties_add_list(props, "deinterlacer",
+			obs_module_text("FrameDropping"), OBS_COMBO_TYPE_LIST,
+			OBS_COMBO_FORMAT_STRING);
+
+	obs_property_list_add_string(prop, obs_module_text(DEINT_BLEND),
+			DEINTER(DEINT_BLEND));
+	obs_property_list_add_string(prop, obs_module_text(DEINT_DISCARD),
+			DEINTER(DEINT_DISCARD));
+	obs_property_list_add_string(prop, obs_module_text(DEINT_LINEAR),
+			DEINTER(DEINT_LINEAR));
+	obs_property_list_add_string(prop, obs_module_text(DEINT_YADIF),
+			DEINTER(DEINT_YADIF));
+	obs_property_list_add_string(prop, obs_module_text(DEINT_YADIF_DISCARD),
+			DEINTER(DEINT_YADIF_DISCARD));
 
 	obs_properties_add_bool(props, "field_order", "Field Order");
 
@@ -144,7 +162,8 @@ static obs_properties_t *deinterlace_properties(void *data)
 
 static void deinterlace_defaults(obs_data_t *settings)
 {
-	obs_data_set_default_string(settings, "deinterlacer", "test");
+	obs_data_set_default_string(settings, "deinterlacer",
+			DEINTER(DEINT_YADIF));
 	obs_data_set_default_bool(settings, "field_order", false);
 }
 
