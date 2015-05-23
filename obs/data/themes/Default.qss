@@ -35,8 +35,8 @@
     qproperty-icon: url(:/res/images/down.png);
 }
 
-* [themeID="multiFileIconSmall"] {
-    qproperty-icon: url(:/res/images/multi-file.png);
+* [themeID="addFilesIconSmall"] {
+    qproperty-icon: url(:/res/images/add-files.png);
 }
 
 MuteCheckBox {
