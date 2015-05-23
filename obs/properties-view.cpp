@@ -489,7 +489,7 @@ void OBSPropertiesView::AddEditableList(obs_property_t *prop,
 	NewButton(sideLayout, info, "addIconSmall",
 			&WidgetInfo::EditListAdd);
 	if (allow_files) {
-		NewButton(sideLayout, info, "multiFileIconSmall",
+		NewButton(sideLayout, info, "addFilesIconSmall",
 				&WidgetInfo::EditListAddMultiple);
 	}
 	NewButton(sideLayout, info, "removeIconSmall",
